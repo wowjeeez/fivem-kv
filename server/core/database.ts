@@ -20,7 +20,7 @@ interface MasterTableQuery<T> {
     readonly page: number
 }
 
-//empty error interface to server as a marker for the QueryResult type
+//empty error interface to serve as a marker for the QueryResult type
 interface VoidErrMarker {
 ___NOOP: null
 }
