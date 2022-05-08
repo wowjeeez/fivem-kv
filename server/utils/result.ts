@@ -6,9 +6,9 @@ class IResult<T, E> {
     public static createErr<T, Succ = void>(val: T): Result<Succ, T> {
         return new IResult<Succ, T>(null, val, false)
     }
-    public unwrap(): T {
+    public unwrap<B = void>(): B extends void ? T : B {
         if (this.success) {
-            return this.okData
+            return this.okData as B extends void ? T : B
         }
         throw new Error(`Called .unwrap() on an Err result\n${this.errData}`)
     }

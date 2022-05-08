@@ -1,4 +1,6 @@
 import * as crypto from "crypto";
+import {Err, Ok, Result} from "../utils/result";
+import {DeserializeError} from "../errors/deser-error";
 class Encryptor {
     constructor() {}
     protected encrypt(dataToEncrypt: string, key: string) {
@@ -46,7 +48,7 @@ function resolveTy(val: string | number | boolean) {
     }
 }
 
-function castType(val: string, tty: PrimitiveTys) {
+function castType(val: string, tty: PrimitiveTys): boolean | number | string {
     switch (tty) {
         case "bool":
             return Boolean(val)
@@ -89,12 +91,17 @@ export class Serializer extends Encryptor {
         }
     }
 
-    protected deserialize<T extends any>(data: string): boolean | number | string | Object | T | unknown {
+    protected deserialize<T extends any>(data: string): Result<boolean | number | string | T, DeserializeError> {
         if (isSingularValue(data)) {
             const val: PrimitiveValue = JSON.parse(data)
-            return castType(val.___INT_ACTUAL_VALUE, val.___INT_CAST_INTO)
+            return Ok(castType(val.___INT_ACTUAL_VALUE, val.___INT_CAST_INTO))
         }
-        return JSON.parse(data)
+        try {
+            const res = JSON.parse(data)
+            return Ok(res)
+        } catch (err) {
+            return Err(new DeserializeError(data, err))
+        }
     }
 
     protected serializeAndEncrypt<T>(data: T, key: string) {
