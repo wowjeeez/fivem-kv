@@ -78,8 +78,8 @@ function isSingularValue(obj: PrimitiveValue | any): obj is PrimitiveValue {
     return (obj.___INT_SINGULAR_VAL && obj.___INT_CAST_INTO && obj.___INT_ACTUAL_VALUE)
 }
 
-export class Serializer extends Encryptor {
-    constructor() {
+export abstract class Serializer extends Encryptor {
+    protected constructor() {
         super()
     }
 

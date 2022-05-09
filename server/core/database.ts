@@ -29,19 +29,18 @@ type QueryResult<T, ToOmit = VoidErrMarker> = Result<boolean | number | string |
 type ValidPrimitives = "str" | "int" | "bool" | "float"
 
 type RootSchema = {
-   readonly [key: string]: {type: ValidPrimitives | SubSchema, pointer: boolean}
+   readonly [key: string]: {type: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[], pointer: boolean}
 }
 
 type SubSchema = {
-    readonly [key: string]: ValidPrimitives | SubSchema | ValidPrimitives[] | SubSchema[]
+    readonly [key: string]: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[]
 }
 
-type ValidSchemas = RootSchema | readonly ValidPrimitives[] |  readonly SubSchema[]
+export type ValidSchemas = RootSchema | readonly ValidPrimitives[] |  readonly SubSchema[] | ValidPrimitives
 //just a type coercer
-export function schema<T extends ValidSchemas>(obj: T) {
+export function schema<T extends ValidSchemas>(obj: T): ToReadonly<T>["inner"] {
     return obj
 }
-type SchemaKeys<T extends RootSchema> = keyof T
 
 type QueryableKeys<T extends RootSchema> = {
     [K in keyof T]: T[K]["pointer"] extends true ? K : never
@@ -49,7 +48,34 @@ type QueryableKeys<T extends RootSchema> = {
 
 type Queries<T, CanQuerySub extends boolean> = MasterTableQuery<T> | CanQuerySub extends true ? TableQuery<T> : MasterTableQuery<T>
 
-const testSchema = schema([{hello: "bool"}, {other: "str", shitHead: {value: {yo: "str"}}}] as const)
+type ConvertType<T extends ValidPrimitives | object> = T extends "str" ? string : T extends "int" ? number : T extends "float" ? number : T extends "bool" ? boolean : T
+
+
+type SimplifyRoot<T extends RootSchema> = {
+    [K in keyof T]: T[K]["type"] extends ValidPrimitives ? ConvertType<T[K]["type"]> :
+        T[K]["type"] extends SubSchema ? SimplifySub<T[K]["type"]> :
+            T[K]["type"] extends readonly ValidPrimitives[] ? ConvertType<T[K]["type"][number]>[] :
+                T[K]["type"] extends readonly SubSchema[] ? SimplifySub<T[K]["type"][number]> : never
+}
+
+
+type SimplifySub<T extends SubSchema | readonly SubSchema[] | readonly ValidPrimitives[] | ValidPrimitives> = {
+    [K in keyof T]: T[K] extends ValidPrimitives ? ConvertType<T[K]> :
+        T[K] extends SubSchema ? SimplifySub<T[K]> :
+            T[K] extends readonly ValidPrimitives[] ? ConvertType<T[K][number]> :
+                T[K] extends readonly SubSchema[] ? SimplifySub<T[K][number]>[] : never
+}
+
+
+type SimplifySchema<T extends ValidSchemas> = T extends RootSchema ? SimplifyRoot<T> :
+    T extends readonly ValidPrimitives[] ? ConvertType<T[number]>[] :
+        T extends readonly SubSchema[] ? SimplifySub<T[number]>[] : T extends ValidPrimitives ? ConvertType<T> : never
+
+const testSchema = schema({testKey: {type: {playerName: "str", playerRank: "int", medals: [{type: "str", grantedOn: "str"}]}, pointer: true}})
+//convert a value to a const (only compile time, to get better type check results)
+interface ToReadonly<T> {
+    readonly inner: T
+}
 
 export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends RootSchema ? true : false, Queryable extends QueryableKeys<T extends RootSchema ? T : never>> extends Serializer {
     constructor(private readonly name: string, private readonly schema: T) {
@@ -123,7 +149,7 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
         return res.isOk() && typeof res.unwrap() === "string" && (await this.getExact(res.unwrap())).isOk()
     }
 
-    public async delete(query: Queries<Queryable, CanQuerySubKeys>): Promise<void> {
+    public async delete(query: Queries<Queryable, CanQuerySubKeys>, deletePointers = true): Promise<void> {
         await this.doPaginatedQueryWithAction<void>(query, DeleteResourceKvp, false)
     }
 
@@ -142,10 +168,11 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
         return candidate.includes(PTR_KEY)
     }
 
-    public writeToKey() {
+    public writeToKey(key: string, queryObj: SimplifySchema<ToReadonly<T>["inner"]>) {
 
     }
 }
 //test
+
 const table = new Table("hello", testSchema)
-table.query({isMasterKey: true, limit: 10, page: 10, queryString: "hello", fieldName: null})
+table.writeToKey("hello", {testKey: {playerName: "", playerRank: 10, medals: [{type: "str", grantedOn: "str"}]}})
