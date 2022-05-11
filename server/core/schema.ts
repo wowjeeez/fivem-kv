@@ -8,6 +8,7 @@ import {
     KIND_SUB_ARRAY,
     type SchemaRtKinds
 } from "./constants";
+import {Err, Ok, Result} from "../utils/result";
 
 //runtime schema utilities
 
@@ -154,4 +155,15 @@ export class SchemaManager<T extends ValidSchemas> {
         return keys
     }
 
+}
+
+//small function to check a schema (mainly useful for exports)
+export function validateSchema(schema: ValidSchemas): Result<true, string> {
+    try {
+        new SchemaManager(schema, true)
+        return Ok(true)
+    }
+    catch (err) {
+        return Err(err.toString())
+    }
 }
