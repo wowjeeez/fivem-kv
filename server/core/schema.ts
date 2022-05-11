@@ -1,4 +1,4 @@
-import type {RootSchema, SubSchema, ValidPrimitives, ValidSchemas} from "./database";
+import type {RootSchema, SimplifySchema, SubSchema, ValidPrimitives, ValidSchemas} from "./database";
 import {
     KIND_MULTI_ARRAY,
     KIND_PRIMITIVE,
@@ -9,6 +9,7 @@ import {
     type SchemaRtKinds
 } from "./constants";
 import {Err, Ok, Result} from "../utils/result";
+import {Const} from "./database";
 
 //runtime schema utilities
 
@@ -63,7 +64,7 @@ export class SchemaManager<T extends ValidSchemas> {
             console.log("Schema validated!")
         }
     }
-    private getKind<B extends boolean>(schema: ValidSchemas | SubSchema, throwErr?: B, key?: string): B extends true ? SchemaRtKinds : SchemaRtKinds | boolean {
+    private getKind<B extends boolean>(schema: ValidSchemas | SubSchema | { pointer: boolean, type: any}, throwErr?: B, key?: string): B extends true ? SchemaRtKinds : SchemaRtKinds | boolean {
         if (Array.isArray(schema)) {
             const containsPrimitive = schema.some(val => isPrimitiveValue(val))
             const containsNonPrimitive = schema.some(val => !isPrimitiveValue(val))
@@ -86,7 +87,7 @@ export class SchemaManager<T extends ValidSchemas> {
         }
     }
 
-    private rtValidateSchema(kind: SchemaRtKinds = this.kind, schema: ValidSchemas | SubSchema = this.schema, key?: string) {
+    private rtValidateSchema(kind: SchemaRtKinds = this.kind, schema: ValidSchemas | SubSchema | { pointer: boolean, type: any} = this.schema, key?: string) {
         console.log("rtValidateSchema", kind, schema)
         if (isKind(kind, KIND_MULTI_ARRAY)) {
             return this.rtValidateMixArraySchema(schema as (ValidPrimitives |  SubSchema)[])
@@ -153,6 +154,10 @@ export class SchemaManager<T extends ValidSchemas> {
         const keys = collectKeysWhere(this.schema as Record<string, any>, (_, val) => val?.pointer === true)
         if (this.doStrictRtTypeChecks) return keys.filter(val => isValidPrimitive(val))
         return keys
+    }
+
+    public rtValidateWriteOperation(query: Partial<SimplifySchema<Const<T>>>) {
+
     }
 
 }

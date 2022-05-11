@@ -6,22 +6,29 @@ import {DeserializeError} from "../errors/deser-error";
 import {SchemaManager} from "./schema";
 
 
-interface TableQuery<T> {
+type TableQuery<T> = {
     readonly queryString: string
-    readonly isMasterKey: false
     readonly fieldName: T
     readonly limit: number
     readonly page: number
 }
-interface MasterTableQuery<T> {
+
+type MasterTableQuery = {
     readonly queryString: string
-    readonly isMasterKey: true
-    readonly fieldName: null
     readonly limit: number
     readonly page: number
 }
 
-//empty error interface to serve as a marker for the QueryResult type
+type Query  = {
+    readonly isMasterKey: boolean;
+    readonly queryString: string
+    readonly fieldName: string
+    readonly limit: number
+    readonly page: number
+}
+
+
+//empty error interface to serve as a marker for the QueryResult type, and to server as other dead-end types
 interface VoidErrMarker {
 ___NOOP: null
 }
@@ -41,15 +48,15 @@ type OptPrimitiveMap = {
 }
 
 
-export type RootSchema = NoPtrRootSchema | PtrRootSchema
-
-type NoPtrRootSchema = {
-   readonly [key: string]: {type: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[], pointer: false}
+export type RootSchema = {
+    readonly [key: string]: Const<NoPtrRootSchema> | Const<PtrRootSchema>
 }
 
-type PtrRootSchema = {
-    readonly [key: string]: {type: RequiredPrimitives, pointer: true}
-}
+type NoPtrRootSchema = {readonly type: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[], readonly pointer: false}
+
+type PtrRootSchema = {readonly type: RequiredPrimitives, readonly pointer: true}
+
+
 
 export type SubSchema = {
     readonly [key: string]: readonly ValidPrimitives[] |  readonly SubSchema[] | ValidPrimitives | SubSchema
@@ -61,11 +68,11 @@ export function schema<T extends ValidSchemas>(obj: T): Const<T> {
     return obj
 }
 
-type QueryableKeys<T extends RootSchema> = {
-    [K in keyof T]: T[K]["pointer"] extends true ? K : never
-}[keyof T]
 
-type Queries<T, CanQuerySub extends boolean> = MasterTableQuery<T> | CanQuerySub extends true ? TableQuery<T> : MasterTableQuery<T>
+export type QueryableKeys<T extends Record<string, NoPtrRootSchema | PtrRootSchema>> = Exclude<{
+    readonly [K in keyof T]: T[K]["pointer"] extends true ? K : VoidErrMarker
+}[keyof T], VoidErrMarker>
+
 
 //from schema to x conversion
 type ConvertOptType<T extends keyof OptPrimitiveMap | object> = T extends keyof OptPrimitiveMap ? OptPrimitiveMap[T] : T
@@ -94,7 +101,7 @@ type SimplifySub<T extends SubSchema | readonly SubSchema[] | readonly ValidPrim
 }
 
 
-type SimplifySchema<T extends ValidSchemas> = T extends RootSchema ? SimplifyRoot<T> :
+export type SimplifySchema<T extends ValidSchemas> = T extends RootSchema ? SimplifyRoot<T> :
     T extends readonly ValidPrimitives[] ? ConvertType<T[number]>[] :
         T extends SubSchema ? SimplifySub<SubSchema> :
             T extends readonly SubSchema[] ? SimplifySub<T[number]>[] : T extends ValidPrimitives ? ConvertType<T> : never
@@ -107,7 +114,14 @@ interface ToReadonly<T> {
 
 export type Const<T> = ToReadonly<T>["inner"]
 
-export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends RootSchema ? true : false, Queryable extends QueryableKeys<T extends RootSchema ? T : never>> {
+type PermitIf<PermitThis, IfThis, IsThis, IfNotThenThis> = IfThis extends IsThis ? PermitThis : IfNotThenThis
+
+export class Table<
+    T extends ValidSchemas,
+    CanQuerySubKeys extends T extends RootSchema ? true : false,
+    Queryable extends CanQuerySubKeys extends true ? T extends RootSchema ? QueryableKeys<Const<T>> : VoidErrMarker : VoidErrMarker,
+    IsMasterFlag extends T extends RootSchema ? QueryableKeys<Const<T>> extends never ? true : boolean : true
+    > {
     private readonly serializer = new Serializer()
     private readonly schema: SchemaManager<T>
     constructor(private readonly name: string, schema: T, private readonly doRtTypeChecks = false) {
@@ -131,8 +145,8 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
         }
     }
 
-    private async doPaginatedQueryWithAction<T>(query: Queries<Queryable, CanQuerySubKeys>, actionRoutine: (key: string, i: number) => T | Promise<T>, push = true) {
-        const key = this.createKeyPrefix(query.queryString, query.isMasterKey, query.fieldName as string)
+    private async doPaginatedQueryWithAction<T>(query: Query, actionRoutine: (key: string, i: number) => T | Promise<T>, push = true) {
+        const key = this.createKeyPrefix(query.queryString, query.isMasterKey, query.fieldName as unknown as string)
         const handle = StartFindKvp(key)
         const results: T[] = []
         const paginate = query.limit !== -1
@@ -161,11 +175,20 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
         }
         return results
     }
-    public async query<T>(query: Queries<Queryable, CanQuerySubKeys>): Promise<(QueryResult<T>)[]> {
-        return this.doPaginatedQueryWithAction<QueryResult<T>>(query, async (key) => {
+    private createQueryObject(query: MasterTableQuery | TableQuery<Queryable>, isMaster: boolean): Query {
+       return {
+           isMasterKey: isMaster,
+           fieldName: (<any>query).fieldName || "",
+           queryString: query.queryString,
+           limit: query.limit,
+           page: query.page
+       }
+    }
+    public async query<M extends IsMasterFlag>(isMaster: M, query: M extends true ? MasterTableQuery : TableQuery<Queryable>): Promise<(QueryResult<SimplifySchema<Const<T>>>)[]> {
+        return this.doPaginatedQueryWithAction<QueryResult<SimplifySchema<Const<T>>>>(this.createQueryObject(query, isMaster), async (key) => {
             let val: any = GetResourceKvpString(key)
             if (this.isPointerKey(val)) { //actual value resolving (even if the key is just a pointer)
-                val = await this.getPointerExact<T>(val)
+                val = await this.getPointerExact(val)
             } else {
                 val = this.serializer.deserialize(val)
             }
@@ -182,13 +205,13 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
         return res.isOk() && typeof res.unwrap() === "string" && (await this.getExact(res.unwrap())).isOk()
     }
 
-    public async delete(query: Queries<Queryable, CanQuerySubKeys>, deletePointers = true): Promise<void> {
-        await this.doPaginatedQueryWithAction<void>(query, DeleteResourceKvp, false)
+    public async delete<M extends IsMasterFlag>(isMaster: M, query: M extends true ? MasterTableQuery : TableQuery<Queryable>, deletePointers = true): Promise<void> {
+        await this.doPaginatedQueryWithAction<void>(this.createQueryObject(query, isMaster), DeleteResourceKvp, false)
     }
 
-    public async count(query: Queries<Queryable, CanQuerySubKeys>): Promise<number> {
+    public async count<M extends IsMasterFlag>(isMaster: M, query: M extends true ? MasterTableQuery : TableQuery<Queryable>): Promise<number> {
         let ctr = 0;
-        await this.doPaginatedQueryWithAction(query, () => ctr++, false)
+        await this.doPaginatedQueryWithAction(this.createQueryObject(query, isMaster), () => ctr++, false)
         return ctr
     }
     protected createKeyPrefix<M extends boolean>(searchQuery: string, isMaster: M, fieldName: M extends true ? never : string) {
@@ -200,6 +223,7 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
     protected isPointerKey(candidate: string) {
         return candidate.includes(PTR_KEY)
     }
+
 
     public writeToKey(key: string, queryObj: SimplifySchema<Const<T>>) {
 
