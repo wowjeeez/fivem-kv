@@ -26,10 +26,27 @@ ___NOOP: null
 }
 
 type QueryResult<T, ToOmit = VoidErrMarker> = Result<boolean | number | string | T, Exclude<QueryError | DeserializeError, ToOmit>>
-type ValidPrimitives = "str" | "int" | "bool" | "float"
+type ValidPrimitives =  RequiredPrimitives | OptionalPrimitives
+type RequiredPrimitives = "str" | "int" | "bool" | "float"
+type OptionalPrimitives = "str?" | "int?" | "float?" | "bool?"
 
-type RootSchema = {
-   readonly [key: string]: {type: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[], pointer: boolean}
+
+type OptPrimitiveMap = {
+    "str?": string | undefined
+    "int?": number | undefined
+    "float?": number | undefined
+    "bool?": boolean | undefined
+}
+
+
+type RootSchema = NoPtrRootSchema | PtrRootSchema
+
+type NoPtrRootSchema = {
+   readonly [key: string]: {type: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[], pointer: false}
+}
+
+type PtrRootSchema = {
+    readonly [key: string]: {type: RequiredPrimitives, pointer: true}
 }
 
 type SubSchema = {
@@ -48,7 +65,13 @@ type QueryableKeys<T extends RootSchema> = {
 
 type Queries<T, CanQuerySub extends boolean> = MasterTableQuery<T> | CanQuerySub extends true ? TableQuery<T> : MasterTableQuery<T>
 
-type ConvertType<T extends ValidPrimitives | object> = T extends "str" ? string : T extends "int" ? number : T extends "float" ? number : T extends "bool" ? boolean : T
+type ConvertOptType<T extends keyof OptPrimitiveMap | object> = T extends keyof OptPrimitiveMap ? OptPrimitiveMap[T] : T
+
+type ConvertType<T extends ValidPrimitives | object | keyof OptPrimitiveMap> = T extends "str" ? string :
+    T extends "int" ? number :
+        T extends "float" ? number :
+            T extends "bool" ? boolean :
+                T extends keyof OptPrimitiveMap ? ConvertOptType<T> : T
 
 
 type SimplifyRoot<T extends RootSchema> = {
@@ -71,7 +94,7 @@ type SimplifySchema<T extends ValidSchemas> = T extends RootSchema ? SimplifyRoo
     T extends readonly ValidPrimitives[] ? ConvertType<T[number]>[] :
         T extends readonly SubSchema[] ? SimplifySub<T[number]>[] : T extends ValidPrimitives ? ConvertType<T> : never
 
-const testSchema = schema({testKey: {type: {playerName: "str", playerRank: "int", medals: [{type: "str", grantedOn: "str"}]}, pointer: true}})
+const testSchema = schema({testKey: {type: {playerName: "str", playerRank: "int", medals: [{type: "str", grantedOn: "str"}]}, pointer: false}})
 //convert a value to a const (only compile time, to get better type check results)
 interface ToReadonly<T> {
     readonly inner: T
@@ -172,7 +195,6 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
 
     }
 }
-//test
 
 const table = new Table("hello", testSchema)
-table.writeToKey("hello", {testKey: {playerName: "", playerRank: 10, medals: [{type: "str", grantedOn: "str"}]}})
+table.writeToKey("hello", {testKey: {playerName: "", playerRank: 10, medals: [{type: "val", grantedOn: "str"}]}})
