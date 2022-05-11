@@ -9,7 +9,7 @@ import {
     type SchemaRtKinds
 } from "./constants";
 import {Err, Ok, Result} from "../utils/result";
-import {Const} from "./database";
+import {Const, RequiredPrimitives} from "./database";
 
 //runtime schema utilities
 
@@ -21,6 +21,20 @@ const isPrimitiveValue = (val: any) => ["string", "boolean", "number"].includes(
 const IsValidPrimitiveOpt = (val: any) => ALL_VALID_PRIMS.includes(val)
 const isValidPrimitive = (val: any, allowOpt = false) => allowOpt ? IsValidPrimitiveOpt(val) : ALL_VALID_NOOPT_PRIMS.includes(val)
 const isKind = (val: any, kinds: SchemaRtKinds | SchemaRtKinds[]) => (Array.isArray(kinds) ? kinds : [kinds]).includes(val) //array conversion required due to mixed strings
+
+const resolvePrimitiveType = (val: any): RequiredPrimitives => {
+    if (typeof val === "number" && !Number.isInteger(val)) {
+        return "float"
+    }
+    switch (typeof val) {
+        case "string":
+            return "str"
+        case "number":
+            return "int"
+        case "boolean":
+            return "bool"
+    }
+}
 
 
 
@@ -51,6 +65,31 @@ const collectKeysWhere = <T extends Record<string, any>>(obj: T, func: (key: key
     }
     return res
 }
+
+const isOptional = (cand: string) => cand.endsWith("?")
+
+const equals = (cand1: ValidPrimitives, cand2: ValidPrimitives, ignoreOptionalFlag = true) => {
+    if (ignoreOptionalFlag) {
+        return cand1.replace("?", "") === cand2.replace("?", "")
+    }
+    return cand2 === cand1
+}
+
+//weird magic string
+const FAIL_MARKER = "____+!+=!T+Q/FDA/FAILED|||OMGOMG" + Date.now().toString()
+
+const _safeAccess = (p: string[], o: Record<string, any>) => p.reduce((obj, ck) => (obj && obj[ck]) ? obj[ck] : FAIL_MARKER, o);
+
+const safeAccess = <T>(obj: Record<string, any>, path: string[]): Result<T, null> => {
+    const res = _safeAccess(path, obj)
+    if (FAIL_MARKER === res) {
+        return Err(null)
+    }
+    return Ok(res)
+}
+
+
+
 
 export class SchemaManager<T extends ValidSchemas> {
     private readonly kind: SchemaRtKinds
@@ -156,8 +195,119 @@ export class SchemaManager<T extends ValidSchemas> {
         return keys
     }
 
-    public rtValidateWriteOperation(query: Partial<SimplifySchema<Const<T>>>) {
+    private rtValidateObjectAgainst(against: SubSchema, obj: Record<string, any>): Result<null, string> {
+        for (const [k, typ] of Object.entries(against)) {
+            const toValidate = obj[k]
+            if (isValidPrimitive(typ)) {
+                if (isPrimitiveValue(toValidate)) {
+                    const candidateType = resolvePrimitiveType(toValidate)
+                    if (equals(candidateType, typ as ValidPrimitives)) {
+                        continue
+                    } else {
+                        return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${candidateType}`)
+                    }
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
+                }
+            }
+            if (Array.isArray(typ)) {
+                if (Array.isArray(toValidate)) {
+                    const res = this.rtValidateArrayAgainst(typ, toValidate)
+                    if (res.isErr()) {
+                        return res
+                    }
+                    continue
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                }
+            }
+            if (typeof typ === "object") {
+                if (typeof toValidate === "object") {
+                    const res = this.rtValidateObjectAgainst(<SubSchema>typ, toValidate)
+                    if (res.isErr()) {
+                        return res
+                    }
+                    continue
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                }
+            }
 
+
+        }
+    }
+    private rtValidateArrayAgainst(against: readonly ValidPrimitives[] | readonly SubSchema[], arr: readonly any[]): Result<null, string> {
+        for (const [idx, typ] of against.entries()) {
+            const toValidate = arr[idx]
+            if (isValidPrimitive(typ)) {
+                if (isPrimitiveValue(toValidate)) {
+                    const candidateType = resolvePrimitiveType(toValidate)
+                    if (equals(candidateType, typ as ValidPrimitives)) {
+                        continue
+                    } else {
+                        return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${candidateType}`)
+                    }
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
+                }
+            }
+            if (Array.isArray(typ)) {
+                if (Array.isArray(toValidate)) {
+                    const res = this.rtValidateArrayAgainst(typ, toValidate)
+                    if (res.isErr()) {
+                        return res
+                    }
+                    continue
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                }
+            }
+
+            if (typeof typ === "object") {
+                if (typeof toValidate === "object") {
+                    const res = this.rtValidateObjectAgainst(typ, toValidate)
+                    if (res.isErr()) {
+                        return res
+                    }
+                    continue
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                }
+            }
+        }
+    }
+
+    public rtValidateWriteOperation(query: Partial<SimplifySchema<Const<T>>>): Result<null, string> {
+            const queryIsArray = Array.isArray(query)
+            const queryIsPrimitive = isPrimitiveValue(query)
+            const queryIsObject = typeof query === "object"
+            if (queryIsPrimitive) {
+                if (this.kind === KIND_PRIMITIVE) {
+                    return Ok(null)
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid write operation DTO. Expected kind: ${this.kind}, but received: ${JSON.stringify(query)}`)
+                }
+            }
+            if (queryIsArray) {
+                if (isKind(this.kind, [KIND_MULTI_ARRAY, KIND_SUB_ARRAY, KIND_PRIMITIVE_ARRAY])) {
+                    return this.rtValidateArrayAgainst(<readonly ValidPrimitives[] | readonly SubSchema[]>this.schema, query)
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid write operation DTO. Expected kind: ${this.kind}, but received: ${JSON.stringify(query)}`)
+                }
+            }
+            if (queryIsObject) {
+                if (isKind(this.kind, [KIND_SUB, KIND_ROOT])) {
+                    return this.rtValidateObjectAgainst(<SubSchema>this.createFlatSchema(), query)
+                } else {
+                    return Err(`[RT-QUERY-CHECK]: Invalid write operation DTO. Expected kind: ${this.kind}, but received: ${JSON.stringify(query)}`)
+                }
+            }
+    }
+    private createFlatSchema() {
+        if (this.kind === KIND_ROOT) {
+            return (<RootSchema>this.schema).type
+        }
+        return this.schema
     }
 
 }

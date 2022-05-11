@@ -35,7 +35,7 @@ ___NOOP: null
 
 type QueryResult<T, ToOmit = VoidErrMarker> = Result<T, Exclude<QueryError | DeserializeError, ToOmit>>
 export type ValidPrimitives =  RequiredPrimitives | OptionalPrimitives
-type RequiredPrimitives = "str" | "int" | "bool" | "float" | "any"
+export type RequiredPrimitives = "str" | "int" | "bool" | "float" | "any"
 type OptionalPrimitives = "str?" | "int?" | "float?" | "bool?" | "any?"
 
 
