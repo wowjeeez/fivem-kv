@@ -49,7 +49,7 @@ function resolveTy(val: string | number | boolean) {
     }
 }
 
-function castType(val: string, tty: PrimitiveTys): boolean | number | string {
+function castType(val: string, tty: PrimitiveTys) {
     switch (tty) {
         case "bool":
             return Boolean(val)
@@ -92,9 +92,10 @@ export class Serializer extends Encryptor {
         }
     }
 
-    public deserialize<T extends any>(data: string): Result<boolean | number | string | T, DeserializeError> {
+    public deserialize<T extends any>(data: string): Result<T, DeserializeError> {
         if (isSingularValue(data)) {
             const val: PrimitiveValue = JSON.parse(data)
+            //@ts-ignore
             return Ok(castType(val.___INT_ACTUAL_VALUE, val.___INT_CAST_INTO))
         }
         try {

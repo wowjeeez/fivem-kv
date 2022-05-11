@@ -33,7 +33,7 @@ interface VoidErrMarker {
 ___NOOP: null
 }
 
-type QueryResult<T, ToOmit = VoidErrMarker> = Result<boolean | number | string | T, Exclude<QueryError | DeserializeError, ToOmit>>
+type QueryResult<T, ToOmit = VoidErrMarker> = Result<T, Exclude<QueryError | DeserializeError, ToOmit>>
 export type ValidPrimitives =  RequiredPrimitives | OptionalPrimitives
 type RequiredPrimitives = "str" | "int" | "bool" | "float" | "any"
 type OptionalPrimitives = "str?" | "int?" | "float?" | "bool?" | "any?"
@@ -96,7 +96,7 @@ type SimplifyRoot<T extends RootSchema> = {
 type SimplifySub<T extends SubSchema | readonly SubSchema[] | readonly ValidPrimitives[] | ValidPrimitives> = {
     [K in keyof T]: T[K] extends ValidPrimitives ? ConvertType<T[K]> :
         T[K] extends SubSchema ? SimplifySub<T[K]> :
-            T[K] extends readonly ValidPrimitives[] ? ConvertType<T[K][number]> :
+            T[K] extends readonly ValidPrimitives[] ? ConvertType<T[K][number]>[] :
                 T[K] extends readonly SubSchema[] ? SimplifySub<T[K][number]>[] : never
 }
 
