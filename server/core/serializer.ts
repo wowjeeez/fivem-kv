@@ -1,6 +1,7 @@
 import * as crypto from "crypto";
-import {Err, Ok, Result} from "../utils/result";
+import {Err, Ok, type Result} from "../utils/result";
 import {DeserializeError} from "../errors/deser-error";
+
 class Encryptor {
     constructor() {}
     protected encrypt(dataToEncrypt: string, key: string) {
@@ -78,12 +79,12 @@ function isSingularValue(obj: PrimitiveValue | any): obj is PrimitiveValue {
     return (obj.___INT_SINGULAR_VAL && obj.___INT_CAST_INTO && obj.___INT_ACTUAL_VALUE)
 }
 
-export abstract class Serializer extends Encryptor {
-    protected constructor() {
+export class Serializer extends Encryptor {
+    constructor() {
         super()
     }
 
-    protected serialize<T extends Object | number | string | boolean>(obj: T): string {
+    public serialize<T extends Object | number | string | boolean>(obj: T): string {
         if (typeof obj === "object") {
             return JSON.stringify(obj)
         } else {
@@ -91,7 +92,7 @@ export abstract class Serializer extends Encryptor {
         }
     }
 
-    protected deserialize<T extends any>(data: string): Result<boolean | number | string | T, DeserializeError> {
+    public deserialize<T extends any>(data: string): Result<boolean | number | string | T, DeserializeError> {
         if (isSingularValue(data)) {
             const val: PrimitiveValue = JSON.parse(data)
             return Ok(castType(val.___INT_ACTUAL_VALUE, val.___INT_CAST_INTO))

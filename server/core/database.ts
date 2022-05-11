@@ -3,6 +3,7 @@ import {QueryError} from "../errors/query-error";
 import {Serializer} from "./serializer";
 import {PTR_KEY, TBL_KEY} from "./constants";
 import {DeserializeError} from "../errors/deser-error";
+import {SchemaManager} from "./schema";
 
 
 interface TableQuery<T> {
@@ -26,9 +27,9 @@ ___NOOP: null
 }
 
 type QueryResult<T, ToOmit = VoidErrMarker> = Result<boolean | number | string | T, Exclude<QueryError | DeserializeError, ToOmit>>
-type ValidPrimitives =  RequiredPrimitives | OptionalPrimitives
-type RequiredPrimitives = "str" | "int" | "bool" | "float"
-type OptionalPrimitives = "str?" | "int?" | "float?" | "bool?"
+export type ValidPrimitives =  RequiredPrimitives | OptionalPrimitives
+type RequiredPrimitives = "str" | "int" | "bool" | "float" | "any"
+type OptionalPrimitives = "str?" | "int?" | "float?" | "bool?" | "any?"
 
 
 type OptPrimitiveMap = {
@@ -36,10 +37,11 @@ type OptPrimitiveMap = {
     "int?": number | undefined
     "float?": number | undefined
     "bool?": boolean | undefined
+    "any?": any | undefined
 }
 
 
-type RootSchema = NoPtrRootSchema | PtrRootSchema
+export type RootSchema = NoPtrRootSchema | PtrRootSchema
 
 type NoPtrRootSchema = {
    readonly [key: string]: {type: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[], pointer: false}
@@ -49,13 +51,13 @@ type PtrRootSchema = {
     readonly [key: string]: {type: RequiredPrimitives, pointer: true}
 }
 
-type SubSchema = {
-    readonly [key: string]: ValidPrimitives | SubSchema | readonly ValidPrimitives[] | readonly SubSchema[]
+export type SubSchema = {
+    readonly [key: string]: readonly ValidPrimitives[] |  readonly SubSchema[] | ValidPrimitives | SubSchema
 }
 
-export type ValidSchemas = RootSchema | readonly ValidPrimitives[] |  readonly SubSchema[] | ValidPrimitives
+export type ValidSchemas = RootSchema | readonly ValidPrimitives[] |  readonly SubSchema[] | ValidPrimitives | SubSchema
 //just a type coercer
-export function schema<T extends ValidSchemas>(obj: T): ToReadonly<T>["inner"] {
+export function schema<T extends ValidSchemas>(obj: T): Const<T> {
     return obj
 }
 
@@ -65,13 +67,15 @@ type QueryableKeys<T extends RootSchema> = {
 
 type Queries<T, CanQuerySub extends boolean> = MasterTableQuery<T> | CanQuerySub extends true ? TableQuery<T> : MasterTableQuery<T>
 
+//from schema to x conversion
 type ConvertOptType<T extends keyof OptPrimitiveMap | object> = T extends keyof OptPrimitiveMap ? OptPrimitiveMap[T] : T
 
 type ConvertType<T extends ValidPrimitives | object | keyof OptPrimitiveMap> = T extends "str" ? string :
     T extends "int" ? number :
         T extends "float" ? number :
             T extends "bool" ? boolean :
-                T extends keyof OptPrimitiveMap ? ConvertOptType<T> : T
+                T extends "any" ? any :
+                    T extends keyof OptPrimitiveMap ? ConvertOptType<T> : T
 
 
 type SimplifyRoot<T extends RootSchema> = {
@@ -92,22 +96,28 @@ type SimplifySub<T extends SubSchema | readonly SubSchema[] | readonly ValidPrim
 
 type SimplifySchema<T extends ValidSchemas> = T extends RootSchema ? SimplifyRoot<T> :
     T extends readonly ValidPrimitives[] ? ConvertType<T[number]>[] :
-        T extends readonly SubSchema[] ? SimplifySub<T[number]>[] : T extends ValidPrimitives ? ConvertType<T> : never
+        T extends SubSchema ? SimplifySub<SubSchema> :
+            T extends readonly SubSchema[] ? SimplifySub<T[number]>[] : T extends ValidPrimitives ? ConvertType<T> : never
 
-const testSchema = schema({testKey: {type: {playerName: "str", playerRank: "int", medals: [{type: "str", grantedOn: "str"}]}, pointer: false}})
+
 //convert a value to a const (only compile time, to get better type check results)
 interface ToReadonly<T> {
     readonly inner: T
 }
 
-export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends RootSchema ? true : false, Queryable extends QueryableKeys<T extends RootSchema ? T : never>> extends Serializer {
-    constructor(private readonly name: string, private readonly schema: T) {
-        super()
+export type Const<T> = ToReadonly<T>["inner"]
+
+export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends RootSchema ? true : false, Queryable extends QueryableKeys<T extends RootSchema ? T : never>> {
+    private readonly serializer = new Serializer()
+    private readonly schema: SchemaManager<T>
+    constructor(private readonly name: string, schema: T, private readonly doRtTypeChecks = false) {
+        this.schema = new SchemaManager<T>(schema, doRtTypeChecks)
     }
+
     public async getExact<T>(key: string): Promise<QueryResult<T>> {
         const value = GetResourceKvpString(key)
         if (value) {
-          return this.deserialize<T>(value)
+          return this.serializer.deserialize<T>(value)
         }
         return Err(new QueryError(this.name, key, "No value found"))
     }
@@ -157,7 +167,7 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
             if (this.isPointerKey(val)) { //actual value resolving (even if the key is just a pointer)
                 val = await this.getPointerExact<T>(val)
             } else {
-                val = this.deserialize(val)
+                val = this.serializer.deserialize(val)
             }
             return val
         })
@@ -191,10 +201,11 @@ export class Table<T extends ValidSchemas, CanQuerySubKeys extends T extends Roo
         return candidate.includes(PTR_KEY)
     }
 
-    public writeToKey(key: string, queryObj: SimplifySchema<ToReadonly<T>["inner"]>) {
+    public writeToKey(key: string, queryObj: SimplifySchema<Const<T>>) {
+
+    }
+    public updateKey(key: string, queryObj: Partial<SimplifySchema<Const<T>>>) {
 
     }
 }
 
-const table = new Table("hello", testSchema)
-table.writeToKey("hello", {testKey: {playerName: "", playerRank: 10, medals: [{type: "val", grantedOn: "str"}]}})

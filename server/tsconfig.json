@@ -16,8 +16,14 @@
     "experimentalDecorators": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "noEmit": true
+    //"noEmit": true,
+    "sourceMap": true,
+    "declaration": true
+
   },
-  "include": ["./**/*", "../common/**/*"],
+  "include": [
+    "./**/*",
+    "../common/**/*",
+  ],
   "exclude": ["**/node_modules"]
 }
