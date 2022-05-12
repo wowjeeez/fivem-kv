@@ -1,4 +1,5 @@
 import type {RootSchema, SimplifySchema, SubSchema, ValidPrimitives, ValidSchemas} from "./database";
+import {Const, RequiredPrimitives} from "./database";
 import {
     KIND_MULTI_ARRAY,
     KIND_PRIMITIVE,
@@ -9,7 +10,6 @@ import {
     type SchemaRtKinds
 } from "./constants";
 import {Err, Ok, Result} from "../utils/result";
-import {Const, RequiredPrimitives} from "./database";
 
 //runtime schema utilities
 
@@ -190,9 +190,15 @@ export class SchemaManager<T extends ValidSchemas> {
     }
 
     public getPointerKeys(): string[] {
-        const keys = collectKeysWhere(this.schema as Record<string, any>, (_, val) => val?.pointer === true)
-        if (this.doStrictRtTypeChecks) return keys.filter(val => isValidPrimitive(val))
-        return keys
+        if (this.kind === KIND_ROOT) {
+            const keys = collectKeysWhere(this.schema as Record<string, any>, (_, val) => val?.pointer === true)
+            if (this.doStrictRtTypeChecks) {
+                // @ts-ignore
+                return keys.filter(val =>isValidPrimitive(this.schema[val]?.type || "INVALID_TYPE"))
+            }
+            return keys
+        }
+        return []
     }
 
     private rtValidateObjectAgainst(against: SubSchema, obj: Record<string, any>): Result<null, string> {
@@ -279,7 +285,7 @@ export class SchemaManager<T extends ValidSchemas> {
         return Ok(null)
     }
 
-    public rtValidateWriteOperation(query: Partial<SimplifySchema<Const<T>>>): Result<null, string> {
+    public rtValidateWriteOperation(query: Partial<SimplifySchema<Const<T>>>, allowPartial = false): Result<null, string> {
             const queryIsArray = Array.isArray(query)
             const queryIsPrimitive = isPrimitiveValue(query)
             const queryIsObject = typeof query === "object"

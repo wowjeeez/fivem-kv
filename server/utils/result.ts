@@ -52,6 +52,11 @@ export function Err<T, Succ = void>(val: T): Result<Succ, T> {
     return IResult.createErr<T, Succ>(val)
 }
 
+
+export interface Infallible {
+
+}
+
 export function wrapIntoResult<T extends (...args: any) => any>(func: T): Result<ReturnType<T>, any> {
     try {
         const res = func()

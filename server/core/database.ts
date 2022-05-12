@@ -1,9 +1,10 @@
-import {Err, Ok, Result} from "../utils/result";
+import {Err, Infallible, Ok, Result} from "../utils/result";
 import {QueryError} from "../errors/query-error";
 import {Serializer} from "./serializer";
 import {PTR_KEY, TBL_KEY} from "./constants";
 import {DeserializeError} from "../errors/deser-error";
 import {SchemaManager} from "./schema";
+import {ValidationError} from "../errors/validation-error";
 
 
 type TableQuery<T> = {
@@ -120,12 +121,13 @@ export class Table<
     T extends ValidSchemas,
     CanQuerySubKeys extends T extends RootSchema ? true : false,
     Queryable extends CanQuerySubKeys extends true ? T extends RootSchema ? QueryableKeys<Const<T>> : VoidErrMarker : VoidErrMarker,
-    IsMasterFlag extends T extends RootSchema ? QueryableKeys<Const<T>> extends never ? true : boolean : true
+    IsMasterFlag extends T extends RootSchema ? QueryableKeys<Const<T>> extends never ? true : boolean : true,
+    DoRtTc extends boolean
     > {
     private readonly serializer = new Serializer()
     private readonly schema: SchemaManager<T>
-    constructor(private readonly name: string, schema: T, private readonly doRtTypeChecks = false) {
-        this.schema = new SchemaManager<T>(schema, doRtTypeChecks)
+    constructor(private readonly name: string, schema: T, private readonly doRuntimeTypeChecksThatImpactPerformanceBadly: DoRtTc) {
+        this.schema = new SchemaManager<T>(schema, doRuntimeTypeChecksThatImpactPerformanceBadly)
     }
 
     public async getExact<T>(key: string): Promise<QueryResult<T>> {
@@ -209,31 +211,58 @@ export class Table<
         await this.doPaginatedQueryWithAction<void>(this.createQueryObject(query, isMaster), DeleteResourceKvp, false)
     }
 
+
     public async count<M extends IsMasterFlag>(isMaster: M, query: M extends true ? MasterTableQuery : TableQuery<Queryable>): Promise<number> {
         let ctr = 0;
         await this.doPaginatedQueryWithAction(this.createQueryObject(query, isMaster), () => ctr++, false)
         return ctr
     }
-    protected createKeyPrefix<M extends boolean>(searchQuery: string, isMaster: M, fieldName: M extends true ? never : string) {
+
+    private createKeyPrefix<M extends boolean>(searchQuery: string, isMaster: M, fieldName: M extends true ? never : string) {
         if (isMaster) {
             return `${TBL_KEY}:${this.name}-${searchQuery}`
         }
         return `${TBL_KEY}:${this.name}-${PTR_KEY}:${fieldName}-${searchQuery}`
     }
-    protected isPointerKey(candidate: string) {
+    private createValueKey(key: string) {
+        return `${TBL_KEY}:${this.name}-${key}`
+    }
+    private createPointerKey(fieldName: string, value: string | number | boolean) {
+        return `${TBL_KEY}:${this.name}-${PTR_KEY}:${fieldName}-${value}`
+    }
+    private async createPointer(key: string, pointsTo: string) {
+        SetResourceKvp(key, pointsTo)
+    }
+
+    private isPointerKey(candidate: string) {
         return candidate.includes(PTR_KEY)
     }
 
+    private async writeValue<TT extends Partial<SimplifySchema<Const<T>>> | string>(key: string, obj: TT, doSerialization: TT extends string ? boolean : true) {
+        const val = doSerialization ? this.serializer.serialize(obj) : obj as string
+        SetResourceKvp(key, val)
+    }
 
-    public writeToKey(key: string, queryObj: SimplifySchema<Const<T>>) {
-        if (this.doRtTypeChecks) {
+    public async writeToKey(key: string, queryObj: SimplifySchema<Const<T>>): Promise<Result<null, DoRtTc extends true ? ValidationError : Infallible>> {
+        if (this.doRuntimeTypeChecksThatImpactPerformanceBadly) {
             console.log("Validating write query")
-            this.schema.rtValidateWriteOperation(queryObj).unwrap()
+            const vres = this.schema.rtValidateWriteOperation(queryObj)
+            if (vres.isErr()) {
+                return Err(new ValidationError(vres.unwrapErr()))
+            }
             console.log("Validated!")
         }
-
+        const ptrKeys = this.schema.getPointerKeys()
+        const ptrVals = ptrKeys.map(key => this.createPointerKey(key, queryObj[key]))
+        console.log("pointer keys", ptrVals)
+        const rootKey = this.createValueKey(key)
+        const writePromise = this.writeValue(rootKey, queryObj, true)
+        const pointerWritePromises = ptrVals.map(key => this.createPointer(key, rootKey))
+        await Promise.all([writePromise, ...pointerWritePromises])
+        return Ok(null)
     }
-    public updateKey(key: string, queryObj: Partial<SimplifySchema<Const<T>>>) {
+
+    public updateKey(key: string, queryObj: Partial<SimplifySchema<Const<T>>>): Promise<Result<null, DoRtTc extends true ? ValidationError : null>> | void /* TODO: remove void later*/ {
 
     }
 }
