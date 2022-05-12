@@ -204,10 +204,10 @@ export class SchemaManager<T extends ValidSchemas> {
                     if (equals(candidateType, typ as ValidPrimitives)) {
                         continue
                     } else {
-                        return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${candidateType}`)
+                        return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${typ}, received: ${candidateType}`)
                     }
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
             if (Array.isArray(typ)) {
@@ -218,23 +218,24 @@ export class SchemaManager<T extends ValidSchemas> {
                     }
                     continue
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
             if (typeof typ === "object") {
                 if (typeof toValidate === "object") {
-                    const res = this.rtValidateObjectAgainst(<SubSchema>typ, toValidate)
+                    const res = this.rtValidateObjectAgainst(this.unwrapRootSchema(typ), toValidate)
                     if (res.isErr()) {
                         return res
                     }
                     continue
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
 
 
         }
+        return Ok(null)
     }
     private rtValidateArrayAgainst(against: readonly ValidPrimitives[] | readonly SubSchema[], arr: readonly any[]): Result<null, string> {
         for (const [idx, typ] of against.entries()) {
@@ -265,7 +266,7 @@ export class SchemaManager<T extends ValidSchemas> {
 
             if (typeof typ === "object") {
                 if (typeof toValidate === "object") {
-                    const res = this.rtValidateObjectAgainst(typ, toValidate)
+                    const res = this.rtValidateObjectAgainst(this.unwrapRootSchema(typ), toValidate)
                     if (res.isErr()) {
                         return res
                     }
@@ -275,6 +276,7 @@ export class SchemaManager<T extends ValidSchemas> {
                 }
             }
         }
+        return Ok(null)
     }
 
     public rtValidateWriteOperation(query: Partial<SimplifySchema<Const<T>>>): Result<null, string> {
@@ -295,19 +297,37 @@ export class SchemaManager<T extends ValidSchemas> {
                     return Err(`[RT-QUERY-CHECK]: Invalid write operation DTO. Expected kind: ${this.kind}, but received: ${JSON.stringify(query)}`)
                 }
             }
+
             if (queryIsObject) {
                 if (isKind(this.kind, [KIND_SUB, KIND_ROOT])) {
-                    return this.rtValidateObjectAgainst(<SubSchema>this.createFlatSchema(), query)
+                    const uwSchema = this.doRecursiveUnwrapOnRootSchema(this.schema as object)
+                    console.log("uwSchema", uwSchema)
+                    return this.rtValidateObjectAgainst(uwSchema, query)
                 } else {
                     return Err(`[RT-QUERY-CHECK]: Invalid write operation DTO. Expected kind: ${this.kind}, but received: ${JSON.stringify(query)}`)
                 }
             }
     }
-    private createFlatSchema() {
-        if (this.kind === KIND_ROOT) {
-            return (<RootSchema>this.schema).type
+    private doRecursiveUnwrapOnRootSchema(obj: Record<string, any>) {
+        const res: Record<string, any> = {}
+        for (const [k, v] of Object.entries(obj)) {
+            if (typeof v === "object" && v.pointer !== undefined && v.type) {
+                res[k] = this.unwrapRootSchema(v)
+            } else {
+                if (typeof v === "object") {
+                    res[k] = this.doRecursiveUnwrapOnRootSchema(v)
+                } else {
+                    res[k] = v
+                }
+            }
         }
-        return this.schema
+        return res
+    }
+    private unwrapRootSchema(schema: any): SubSchema {
+        if (schema.pointer !== undefined && schema.type) {
+            return schema.type
+        }
+        return schema
     }
 
 }

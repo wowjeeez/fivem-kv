@@ -226,7 +226,11 @@ export class Table<
 
 
     public writeToKey(key: string, queryObj: SimplifySchema<Const<T>>) {
-
+        if (this.doRtTypeChecks) {
+            console.log("Validating write query")
+            this.schema.rtValidateWriteOperation(queryObj).unwrap()
+            console.log("Validated!")
+        }
     }
     public updateKey(key: string, queryObj: Partial<SimplifySchema<Const<T>>>) {
 
