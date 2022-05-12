@@ -204,10 +204,10 @@ export class SchemaManager<T extends ValidSchemas> {
                     if (equals(candidateType, typ as ValidPrimitives)) {
                         continue
                     } else {
-                        return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${typ}, received: ${candidateType}`)
+                        return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO (key: ${k}), expected: ${typ}, received: ${candidateType}`)
                     }
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO (key: ${k}), expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
             if (Array.isArray(typ)) {
@@ -218,7 +218,7 @@ export class SchemaManager<T extends ValidSchemas> {
                     }
                     continue
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO (key: ${k}), expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
             if (typeof typ === "object") {
@@ -229,7 +229,7 @@ export class SchemaManager<T extends ValidSchemas> {
                     }
                     continue
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in object DTO (key: ${k}), expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
 
@@ -246,10 +246,10 @@ export class SchemaManager<T extends ValidSchemas> {
                     if (equals(candidateType, typ as ValidPrimitives)) {
                         continue
                     } else {
-                        return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${candidateType}`)
+                        return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO (idx: ${idx}), expected: ${typ}, received: ${candidateType}`)
                     }
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO (idx: ${idx}), expected: ${typ}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
             if (Array.isArray(typ)) {
@@ -260,7 +260,7 @@ export class SchemaManager<T extends ValidSchemas> {
                     }
                     continue
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO (idx: ${idx}), expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
 
@@ -272,7 +272,7 @@ export class SchemaManager<T extends ValidSchemas> {
                     }
                     continue
                 } else {
-                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO, expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
+                    return Err(`[RT-QUERY-CHECK]: Invalid type in array DTO (idx: ${idx}), expected: ${JSON.stringify(typ)}, received: ${JSON.stringify(toValidate)}`)
                 }
             }
         }
