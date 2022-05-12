@@ -18,8 +18,20 @@ class IResult<T, E> {
     public isOk() {
         return this.success
     }
+
+    public is(val: "error" | "success") {
+        if (val === "error") {
+            return this.isErr()
+        }
+        return this.isOk()
+    }
+
     public unwrapOr(or: T) {
         return this.success ? this.okData : or
+    }
+
+    public unwrapOrFunc(orFunc: (err: E) => T) {
+        return this.success ? this.okData : orFunc(this.errData)
     }
 
     public unwrapErr() {

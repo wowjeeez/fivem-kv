@@ -231,6 +231,7 @@ export class Table<
             this.schema.rtValidateWriteOperation(queryObj).unwrap()
             console.log("Validated!")
         }
+
     }
     public updateKey(key: string, queryObj: Partial<SimplifySchema<Const<T>>>) {
 
